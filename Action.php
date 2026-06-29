@@ -536,9 +536,8 @@ class Action extends Base implements ActionInterface
 
         $redirectUri = Common::url('/oidc/callback', $this->options->index);
 
-        // 构建请求头
-        $authString = $this->pluginConfig->clientId . ':' . $this->pluginConfig->clientSecret;
-        $authHeader = 'Basic ' . base64_encode($authString);
+        // 构建请求头（RFC 6749 §2.3.1 要求对 client_id 和 client_secret 进行 form-urlencoded 编码）
+        $authHeader = 'Basic ' . base64_encode(rawurlencode($this->pluginConfig->clientId) . ':' . rawurlencode($this->pluginConfig->clientSecret));
 
         $headers = array(
             'Authorization: ' . $authHeader,
