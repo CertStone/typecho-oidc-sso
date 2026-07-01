@@ -139,7 +139,7 @@ class Action extends Base implements ActionInterface
         if (empty($code)) {
             $error = $this->request->get('error');
             $errorDescription = $this->request->get('error_description');
-            error_log("OIDC 授权失败: {$error} - {$errorDescription}");
+            self::logSafe("OIDC 授权失败: {$error} - {$errorDescription}");
             $this->loginError('授权失败，请重试');
         }
 
@@ -224,7 +224,7 @@ class Action extends Base implements ActionInterface
                     $issuer = (string) $binding['iss'];
                 }
             } catch (\Throwable $e) {
-                error_log('OIDC: 获取绑定 issuer 失败 - ' . $e->getMessage());
+                self::logSafe('OIDC: 获取绑定 issuer 失败 - ' . $e->getMessage());
             }
         }
 
@@ -276,7 +276,7 @@ class Action extends Base implements ActionInterface
 
             $this->notice->set(_t('解绑成功'), 'success');
         } catch (Exception $e) {
-            error_log('OIDC 解绑错误: ' . $e->getMessage());
+            self::logSafe('OIDC 解绑错误: ' . $e->getMessage());
             $this->notice->set(_t('解绑失败，请稍后重试'), 'error');
         }
 
@@ -351,7 +351,7 @@ class Action extends Base implements ActionInterface
                 $this->handleBinding($userInfo);
             }
         } catch (Exception $e) {
-            error_log('OIDC 登录错误: ' . $e->getMessage());
+            self::logSafe('OIDC 登录错误: ' . $e->getMessage());
             $this->loginError('登录过程中发生错误，请稍后重试');
         }
     }
@@ -400,7 +400,7 @@ class Action extends Base implements ActionInterface
             $this->redirectAfterLogin($this->getOidcPanelUrl());
 
         } catch (Exception $e) {
-            error_log('OIDC 绑定错误: ' . $e->getMessage());
+            self::logSafe('OIDC 绑定错误: ' . $e->getMessage());
             $this->loginError('绑定过程中发生错误，请稍后重试');
         }
     }
@@ -530,7 +530,7 @@ class Action extends Base implements ActionInterface
         // 确定 token 端点 URL
         $discoveryData = $this->getDiscoveryData();
         if (empty($discoveryData['token_endpoint'])) {
-            error_log('OIDC: 无法获取 Token 端点');
+            self::logSafe('OIDC: 无法获取 Token 端点');
             return false;
         }
 
@@ -555,7 +555,7 @@ class Action extends Base implements ActionInterface
         if ($this->isPkceEnabled()) {
             $pkceVerifier = $this->getPkceVerifier();
             if (empty($pkceVerifier)) {
-                error_log('OIDC: PKCE 校验失败，缺少 code_verifier');
+                self::logSafe('OIDC: PKCE 校验失败，缺少 code_verifier');
                 return false;
             }
             $postData['code_verifier'] = $pkceVerifier;
@@ -580,7 +580,7 @@ class Action extends Base implements ActionInterface
         curl_close($ch);
 
         if (!empty($curlError)) {
-            error_log('OIDC: 获取 Token 失败 - ' . $curlError);
+            self::logSafe('OIDC: 获取 Token 失败 - ' . $curlError);
         }
 
         if ($httpCode != 200 || empty($response)) {
@@ -608,7 +608,7 @@ class Action extends Base implements ActionInterface
         // 获取 UserInfo 端点
         $discoveryData = $this->getDiscoveryData();
         if (empty($discoveryData['userinfo_endpoint'])) {
-            error_log('OIDC: 无法获取 UserInfo 端点');
+            self::logSafe('OIDC: 无法获取 UserInfo 端点');
             return false;
         }
 
@@ -631,24 +631,24 @@ class Action extends Base implements ActionInterface
         curl_close($ch);
 
         if (!empty($curlError)) {
-            error_log('OIDC: 获取 UserInfo 失败 - ' . $curlError);
+            self::logSafe('OIDC: 获取 UserInfo 失败 - ' . $curlError);
             return false;
         }
 
         if ($httpCode != 200 || empty($response)) {
-            error_log('OIDC: UserInfo 端点返回错误: HTTP ' . $httpCode);
+            self::logSafe('OIDC: UserInfo 端点返回错误: HTTP ' . $httpCode);
             return false;
         }
 
         $userInfo = json_decode($response, true);
         if (json_last_error() !== JSON_ERROR_NONE) {
-            error_log('OIDC: 无法解析 UserInfo 响应');
+            self::logSafe('OIDC: 无法解析 UserInfo 响应');
             return false;
         }
 
         // 验证必需字段
         if (empty($userInfo['sub'])) {
-            error_log('OIDC: UserInfo 缺少 sub 字段');
+            self::logSafe('OIDC: UserInfo 缺少 sub 字段');
             return false;
         }
 
@@ -693,7 +693,7 @@ class Action extends Base implements ActionInterface
 
         if ($httpCode != 200 || empty($response)) {
             if (!empty($curlError)) {
-                error_log('OIDC: 获取发现文档失败 - ' . $curlError);
+                self::logSafe('OIDC: 获取发现文档失败 - ' . $curlError);
             }
             return false;
         }
@@ -1394,6 +1394,24 @@ class Action extends Base implements ActionInterface
         $errorMessage = $message;
         include dirname(__FILE__) . '/Error.php';
         exit;
+    }
+
+    /**
+     * 安全写日志（过滤换行/控制符，防止日志注入）
+     *
+     * 攻击者可通过构造含 \n 的 OIDC 回调参数（如 error_description），
+     * 在服务器日志中伪造额外的日志行。本方法将所有控制字符
+     * (0x00-0x1F, 0x7F) 替换为空格。
+     *
+     * @param string $message
+     */
+    private static function logSafe($message)
+    {
+        $sanitized = preg_replace('/[\x00-\x1F\x7F]/u', ' ', (string) $message);
+        if ($sanitized === null) {
+            $sanitized = preg_replace('/[\x00-\x1F\x7F]/', ' ', (string) $message);
+        }
+        error_log($sanitized);
     }
 }
 
