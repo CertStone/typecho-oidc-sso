@@ -56,6 +56,12 @@ class Action extends Base implements ActionInterface
 
         switch ($do) {
             case 'unbind':
+                // 解绑是状态变更操作，仅允许 POST 请求
+                $requestMethod = isset($_SERVER['REQUEST_METHOD']) ? strtoupper($_SERVER['REQUEST_METHOD']) : '';
+                if ($requestMethod !== 'POST') {
+                    $this->response->setStatus(405);
+                    exit;
+                }
                 $this->unbind();
                 break;
             default:
@@ -251,10 +257,7 @@ class Action extends Base implements ActionInterface
             exit;
         }
 
-        $bindingId = $this->request->get('binding_id');
-        if (empty($bindingId)) {
-            $bindingId = $this->request->post('binding_id');
-        }
+        $bindingId = $this->request->post('binding_id');
         $bindingId = intval($bindingId);
 
         if ($bindingId <= 0) {
